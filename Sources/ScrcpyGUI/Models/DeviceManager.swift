@@ -94,9 +94,9 @@ class DeviceManager: ObservableObject {
 
             do {
                 try process.run()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
 
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 let output = String(data: data, encoding: .utf8) ?? ""
                 let parsed = self.parseDevices(output)
 
@@ -142,11 +142,9 @@ class DeviceManager: ObservableObject {
             guard let self = self else { return }
 
             // Step 1: adb -s <serial> tcpip 5555
-            let tcpipOut = self.runADB(["-s", serial, "tcpip", "5555"]) ?? ""
+            _ = self.runADB(["-s", serial, "tcpip", "5555"])
             DispatchQueue.main.async {
-                self.wirelessStatus = tcpipOut.contains("restarting")
-                    ? "TCP/IP mode enabled. Discovering device IP…"
-                    : "TCP/IP sent. Discovering device IP…"
+                self.wirelessStatus = "TCP/IP enabled. Discovering device IP…"
             }
 
             // Brief pause to let the device restart its adbd in TCP mode.
@@ -169,13 +167,25 @@ class DeviceManager: ObservableObject {
                 self.wirelessStatus = "Connecting to \(address)…"
             }
 
-            // Step 3: adb connect <ip>:5555
-            let connectOut = self.runADB(["connect", address]) ?? ""
+            // Step 3: Warm up network route (populates Mac ARP cache for device)
+            self.warmUpNetworkRoute(ip: deviceIP)
+
+            // Step 4: adb connect <ip>:5555 with auto-recovery retry
+            var connectOut = self.runADB(["connect", address]) ?? ""
+            if !connectOut.contains("connected") {
+                // If stale ADB server has a cached socket error, restart server and retry
+                _ = self.runADB(["kill-server"])
+                _ = self.runADB(["start-server"])
+                Thread.sleep(forTimeInterval: 1.2)
+                connectOut = self.runADB(["connect", address]) ?? ""
+            }
 
             DispatchQueue.main.async {
                 self.isConfiguringWireless = false
                 if connectOut.contains("connected") {
                     self.wirelessStatus = "✓ Connected to \(address). You can unplug the USB cable now!"
+                    // Select the newly connected wireless device
+                    self.selectedDeviceSerial = address
                     // Refresh the device list so the new Wi-Fi serial appears.
                     self.scanDevices()
                 } else {
@@ -191,17 +201,30 @@ class DeviceManager: ObservableObject {
         let clean = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         let target = clean.contains(":") ? clean : "\(clean):5555"
+        let ipOnly = target.components(separatedBy: ":").first ?? target
 
         isConfiguringWireless = true
         wirelessStatus = "Connecting to \(target)…"
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            let out = self.runADB(["connect", target]) ?? ""
+
+            self.warmUpNetworkRoute(ip: ipOnly)
+
+            var out = self.runADB(["connect", target]) ?? ""
+            if !out.contains("connected") {
+                // Auto-retry with fresh server in case of stale sockets
+                _ = self.runADB(["kill-server"])
+                _ = self.runADB(["start-server"])
+                Thread.sleep(forTimeInterval: 1.2)
+                out = self.runADB(["connect", target]) ?? ""
+            }
+
             DispatchQueue.main.async {
                 self.isConfiguringWireless = false
                 if out.contains("connected") {
                     self.wirelessStatus = "✓ Successfully connected to \(target)!"
+                    self.selectedDeviceSerial = target
                     self.scanDevices()
                 } else {
                     self.wirelessStatus = ""
@@ -209,6 +232,29 @@ class DeviceManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Disconnects a wireless ADB session.
+    func disconnectWireless(serial: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            _ = self.runADB(["disconnect", serial])
+            DispatchQueue.main.async {
+                self.wirelessStatus = "Disconnected from \(serial)"
+                self.scanDevices()
+            }
+        }
+    }
+
+    /// Pings the target IP once to resolve ARP and prime the network route on macOS.
+    private func warmUpNetworkRoute(ip: String) {
+        let pingProcess = Process()
+        pingProcess.executableURL = URL(fileURLWithPath: "/sbin/ping")
+        pingProcess.arguments = ["-c", "1", "-t", "1", ip]
+        pingProcess.standardOutput = FileHandle.nullDevice
+        pingProcess.standardError = FileHandle.nullDevice
+        try? pingProcess.run()
+        pingProcess.waitUntilExit()
     }
 
     /// Attempts multiple strategies to find the device's local Wi-Fi IP address.
@@ -227,7 +273,7 @@ class DeviceManager: ObservableObject {
 
         // Strategy C: getprop dhcp.wlan0.ipaddress
         if let prop = self.runADB(["-s", serial, "shell", "getprop", "dhcp.wlan0.ipaddress"])?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !prop.isEmpty && prop.contains(".") {
+           !prop.isEmpty && isValidIPv4(prop) {
             return prop
         }
 
@@ -239,13 +285,25 @@ class DeviceManager: ObservableObject {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("inet ") {
                 let withoutInet = trimmed.dropFirst(5)
-                let ipCandidate = String(withoutInet.components(separatedBy: "/").first ?? "")
-                if !ipCandidate.isEmpty && ipCandidate != "127.0.0.1" {
-                    return ipCandidate
+                let tokens = withoutInet.split(separator: " ")
+                if let firstToken = tokens.first {
+                    let ipCandidate = String(firstToken.split(separator: "/").first ?? "")
+                    if isValidIPv4(ipCandidate) && ipCandidate != "127.0.0.1" {
+                        return ipCandidate
+                    }
                 }
             }
         }
         return nil
+    }
+
+    private func isValidIPv4(_ str: String) -> Bool {
+        let parts = str.split(separator: ".")
+        guard parts.count == 4 else { return false }
+        for part in parts {
+            guard let num = Int(part), (0...255).contains(num) else { return false }
+        }
+        return true
     }
 
     // MARK: Device Info
@@ -336,8 +394,8 @@ class DeviceManager: ObservableObject {
 
         do {
             try process.run()
-            process.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
             return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             return nil

@@ -31,6 +31,7 @@ struct SettingsView: View {
     var deviceInfo: DeviceInfo?
     var onSetupWireless: ((String) -> Void)? = nil
     var onConnectIP: ((String) -> Void)? = nil
+    var onDisconnectWireless: ((String) -> Void)? = nil
     var currentSerial: String = ""
 
     @State private var activeCategory: MirroringCategory = .display
@@ -329,6 +330,39 @@ struct SettingsView: View {
 
     private var wirelessTab: some View {
         VStack(spacing: 14) {
+            // Active wireless session badge
+            if currentSerial.contains(":") {
+                GroupBox {
+                    HStack(spacing: 12) {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.title2)
+                            .foregroundStyle(.green)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Active Wireless Connection")
+                                .font(.headline)
+                            Text("Connected to \(currentSerial)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button(role: .destructive) {
+                            onDisconnectWireless?(currentSerial)
+                        } label: {
+                            Label("Disconnect", systemImage: "xmark.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
+                    }
+                    .padding(4)
+                } label: {
+                    Label("Connected", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+            }
+
             // Method 1: 1-Click USB to Wi-Fi
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
