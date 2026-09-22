@@ -19,6 +19,14 @@ mkdir -p "${APP_DIR}/Contents/Resources"
 cp "${BUILD_DIR}/${APP_NAME}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 
+# Copy AppIcon into app bundle
+if [ -f "Resources/AppIcon.icns" ]; then
+    cp "Resources/AppIcon.icns" "${APP_DIR}/Contents/Resources/AppIcon.icns"
+fi
+if [ -f "Resources/AppIcon.png" ]; then
+    cp "Resources/AppIcon.png" "${APP_DIR}/Contents/Resources/AppIcon.png"
+fi
+
 cat << 'EOF' > "${APP_DIR}/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -27,6 +35,8 @@ cat << 'EOF' > "${APP_DIR}/Contents/Info.plist"
     <key>CFBundleExecutable</key>
     <string>ScrcpyGUI</string>
     <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.scrcpygui.app</string>
@@ -53,9 +63,15 @@ mkdir -p "${STAGING_DIR}"
 cp -R "${APP_DIR}" "${STAGING_DIR}/"
 ln -s /Applications "${STAGING_DIR}/Applications"
 
+# Set volume icon if available
+if [ -f "Resources/AppIcon.icns" ]; then
+    cp "Resources/AppIcon.icns" "${STAGING_DIR}/.VolumeIcon.icns"
+    which SetFile >/dev/null 2>&1 && SetFile -a C "${STAGING_DIR}" || true
+fi
+
 hdiutil create -volname "${APP_NAME}" -srcfolder "${STAGING_DIR}" -ov -format UDZO "${DMG_NAME}"
 
 rm -rf "${STAGING_DIR}" "${DIST_DIR}"
 
-echo "✅ Done! Created ${DMG_NAME} successfully."
+echo "✅ Done! Created ${DMG_NAME} successfully with app icon."
 ls -lh "${DMG_NAME}"

@@ -1,8 +1,16 @@
-# 📱 ScrcpyGUI for macOS
+<p align="center">
+  <img src="Resources/AppIcon.png" alt="ScrcpyGUI App Icon" width="140" style="border-radius: 28px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);" />
+</p>
 
-A sleek, fast, and native macOS frontend for [scrcpy](https://github.com/Genymobile/scrcpy) built with **SwiftUI**. 
+<h1 align="center">ScrcpyGUI for macOS</h1>
 
-Effortlessly mirror, control, and record your Android phone with ultra-low latency, crystal-clear audio, dynamic hardware-matched sliders, and a dedicated Screen Recording Studio.
+<p align="center">
+  <b>A sleek, fast, and native macOS frontend for <a href="https://github.com/Genymobile/scrcpy">scrcpy</a> built with SwiftUI.</b>
+</p>
+
+<p align="center">
+  Effortlessly mirror, control, and record your Android phone with ultra-low latency, crystal-clear audio, dynamic hardware-matched sliders, and a dedicated Screen Recording Studio.
+</p>
 
 ---
 
