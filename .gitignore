@@ -1,0 +1,16 @@
+# Swift Package Manager build output
+.build/
+.swiftpm/
+
+# macOS system files
+.DS_Store
+.Trashes
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+
+# Staging & packaging artifacts
+dist/
+dmg_staging/
+*.dmg
