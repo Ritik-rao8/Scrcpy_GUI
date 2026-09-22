@@ -76,6 +76,9 @@ struct ContentView: View {
                             onSetupWireless: { serial in
                                 deviceManager.setupWireless(serial: serial)
                             },
+                            onConnectIP: { address in
+                                deviceManager.connectWireless(address: address)
+                            },
                             currentSerial: deviceManager.selectedDeviceSerial
                         )
                     } else {

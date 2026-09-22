@@ -152,29 +152,19 @@ class DeviceManager: ObservableObject {
             // Brief pause to let the device restart its adbd in TCP mode.
             Thread.sleep(forTimeInterval: 1.5)
 
-            // Step 2: grab the device's Wi-Fi IP address.
-            let ipOutput = self.runADB(["-s", serial, "shell", "ip", "-f", "inet", "addr", "show", "wlan0"]) ?? ""
-            var deviceIP: String? = nil
-            for line in ipOutput.components(separatedBy: "\n") {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("inet ") {
-                    // inet 192.168.1.42/24 → extract 192.168.1.42
-                    let withoutInet = trimmed.dropFirst(5)
-                    deviceIP = String(withoutInet.components(separatedBy: "/").first ?? "")
-                    break
-                }
-            }
+            // Step 2: grab the device's Wi-Fi IP address with multi-strategy fallback
+            let ip = self.discoverDeviceIP(serial: serial)
 
-            guard let ip = deviceIP, !ip.isEmpty else {
+            guard let deviceIP = ip, !deviceIP.isEmpty else {
                 DispatchQueue.main.async {
                     self.wirelessStatus = ""
-                    self.lastError = "Could not detect Wi-Fi IP address. Make sure the phone is on Wi-Fi and try again."
+                    self.lastError = "Could not auto-detect Wi-Fi IP address. Please ensure phone is connected to the same Wi-Fi as your Mac, or enter the IP manually."
                     self.isConfiguringWireless = false
                 }
                 return
             }
 
-            let address = "\(ip):5555"
+            let address = "\(deviceIP):5555"
             DispatchQueue.main.async {
                 self.wirelessStatus = "Connecting to \(address)…"
             }
@@ -185,7 +175,7 @@ class DeviceManager: ObservableObject {
             DispatchQueue.main.async {
                 self.isConfiguringWireless = false
                 if connectOut.contains("connected") {
-                    self.wirelessStatus = "✓ Connected to \(address). You can unplug the USB cable now."
+                    self.wirelessStatus = "✓ Connected to \(address). You can unplug the USB cable now!"
                     // Refresh the device list so the new Wi-Fi serial appears.
                     self.scanDevices()
                 } else {
@@ -194,6 +184,68 @@ class DeviceManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Connect directly to a device over Wi-Fi via IP and port.
+    func connectWireless(address: String) {
+        let clean = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        let target = clean.contains(":") ? clean : "\(clean):5555"
+
+        isConfiguringWireless = true
+        wirelessStatus = "Connecting to \(target)…"
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let out = self.runADB(["connect", target]) ?? ""
+            DispatchQueue.main.async {
+                self.isConfiguringWireless = false
+                if out.contains("connected") {
+                    self.wirelessStatus = "✓ Successfully connected to \(target)!"
+                    self.scanDevices()
+                } else {
+                    self.wirelessStatus = ""
+                    self.lastError = "Connection failed: \(out)"
+                }
+            }
+        }
+    }
+
+    /// Attempts multiple strategies to find the device's local Wi-Fi IP address.
+    private func discoverDeviceIP(serial: String) -> String? {
+        // Strategy A: ip -f inet addr show wlan0
+        if let out = self.runADB(["-s", serial, "shell", "ip", "-f", "inet", "addr", "show", "wlan0"]),
+           let ip = extractFirstInetIP(from: out) {
+            return ip
+        }
+
+        // Strategy B: any non-loopback inet from `ip -f inet addr`
+        if let out = self.runADB(["-s", serial, "shell", "ip", "-f", "inet", "addr"]),
+           let ip = extractFirstInetIP(from: out) {
+            return ip
+        }
+
+        // Strategy C: getprop dhcp.wlan0.ipaddress
+        if let prop = self.runADB(["-s", serial, "shell", "getprop", "dhcp.wlan0.ipaddress"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !prop.isEmpty && prop.contains(".") {
+            return prop
+        }
+
+        return nil
+    }
+
+    private func extractFirstInetIP(from output: String) -> String? {
+        for line in output.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("inet ") {
+                let withoutInet = trimmed.dropFirst(5)
+                let ipCandidate = String(withoutInet.components(separatedBy: "/").first ?? "")
+                if !ipCandidate.isEmpty && ipCandidate != "127.0.0.1" {
+                    return ipCandidate
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: Device Info

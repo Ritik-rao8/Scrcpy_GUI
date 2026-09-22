@@ -30,9 +30,11 @@ struct SettingsView: View {
     @ObservedObject var settings: ScrcpySettings
     var deviceInfo: DeviceInfo?
     var onSetupWireless: ((String) -> Void)? = nil
+    var onConnectIP: ((String) -> Void)? = nil
     var currentSerial: String = ""
 
     @State private var activeCategory: MirroringCategory = .display
+    @State private var manualIPAddress: String = ""
 
     /// Dynamic upper bound for the resolution slider.
     private var maxResolution: Double {
@@ -326,63 +328,101 @@ struct SettingsView: View {
     // MARK: - Wireless Tab
 
     private var wirelessTab: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Switch your USB-connected device to Wi-Fi mode to unplug the cable and mirror wirelessly.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 14) {
+            // Method 1: 1-Click USB to Wi-Fi
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("The easiest way: plug in USB once, click the button, and unplug.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
 
-                HStack(spacing: 12) {
-                    Image(systemName: "cable.connector.slash")
-                        .font(.title2)
-                        .foregroundStyle(.orange)
-                        .frame(width: 32)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Step 1: Keep USB cable connected")
-                            .font(.caption.weight(.semibold))
-                        Text("Click the button below to enable TCP/IP mode and discover device IP.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Image(systemName: "1.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.blue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Step 1: Keep USB cable connected for 5 seconds")
+                                .font(.caption.weight(.semibold))
+                            Text("Make sure both phone and Mac are connected to the SAME Wi-Fi network.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                }
 
-                HStack(spacing: 12) {
-                    Image(systemName: "wifi")
-                        .font(.title2)
-                        .foregroundStyle(.green)
-                        .frame(width: 32)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Step 2: Unplug cable & enjoy")
-                            .font(.caption.weight(.semibold))
-                        Text("Once connected wirelessly, you can unplug the USB cable.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Image(systemName: "2.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Step 2: Click below and unplug cable")
+                                .font(.caption.weight(.semibold))
+                            Text("ScrcpyGUI will enable TCP/IP, find your phone's IP, and connect wirelessly.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                }
 
-                Divider()
+                    Divider()
 
-                Button {
-                    guard !currentSerial.isEmpty else { return }
-                    onSetupWireless?(currentSerial)
-                } label: {
-                    Label("Switch to Wi-Fi Mode", systemImage: "antenna.radiowaves.left.and.right")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
+                    Button {
+                        guard !currentSerial.isEmpty else { return }
+                        onSetupWireless?(currentSerial)
+                    } label: {
+                        Label("Switch to Wi-Fi Mode (1-Click)", systemImage: "antenna.radiowaves.left.and.right")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .controlSize(.large)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(currentSerial.isEmpty || currentSerial.contains(":"))
+                    .help(currentSerial.isEmpty
+                          ? "Connect your phone via USB first"
+                          : currentSerial.contains(":")
+                            ? "Device is already connected wirelessly!"
+                            : "Enable wireless mode on \(currentSerial)")
                 }
-                .controlSize(.large)
-                .buttonStyle(.borderedProminent)
-                .disabled(currentSerial.isEmpty)
-                .help(currentSerial.isEmpty
-                      ? "Connect a device via USB first"
-                      : "Enable wireless mode on \(currentSerial)")
+                .padding(6)
+            } label: {
+                Label("Method 1: 1-Click Auto Switch (Recommended)", systemImage: "bolt.fill")
+                    .font(.headline)
             }
-            .padding(6)
-        } label: {
-            Label("Wireless Setup Tool", systemImage: "wifi")
-                .font(.headline)
+
+            // Method 2: Connect directly via IP
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Already know your phone's IP or using Android 11+ Wireless Debugging? Connect directly without plugging in USB.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 10) {
+                        Image(systemName: "network")
+                            .foregroundStyle(.secondary)
+
+                        TextField("e.g. 192.168.1.42 or 192.168.1.42:5555", text: $manualIPAddress)
+                            .textFieldStyle(.roundedBorder)
+
+                        Button {
+                            let target = manualIPAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !target.isEmpty else { return }
+                            onConnectIP?(target)
+                        } label: {
+                            Label("Connect", systemImage: "arrow.right.circle.fill")
+                                .fontWeight(.semibold)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                        .disabled(manualIPAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    Text("Tip: On your phone, go to Settings → About Phone → Status to find your IP address.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(6)
+            } label: {
+                Label("Method 2: Connect via IP Address", systemImage: "wifi")
+                    .font(.headline)
+            }
         }
     }
 
